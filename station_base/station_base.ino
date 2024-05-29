@@ -44,6 +44,22 @@ void step_mot2(int step1, int dir ){
   digitalWrite(en, HIGH);
 }
 
+void step_mot_n(int step1, int dir , int pdir , int pstep , int enn , int tm){ // step1 - назначены шаги, dir - направление , pdir - пин направление , pstep - пин шагов ,  enn - пин включение,  tm - время переключение
+  Serial.print(step1);  
+  digitalWrite(enn, LOW);
+  digitalWrite(pdir, dir); // Установка вращения по часовой стрелки
+  for(long x = 0; x < step1; x++)
+  {
+    if (btn1.click()){
+        digitalWrite(pstep, HIGH);
+        delayMicroseconds(tm);
+        digitalWrite(pstep, LOW);
+        delayMicroseconds(tm);
+    }
+  }
+  digitalWrite(enn, HIGH);
+}
+
 
 String getValue(String data, char separator, int index)
 {
@@ -78,7 +94,8 @@ void loop()
     if (xval=="P"){
       Serial.print(yval);
       Serial.println(" Podiemnik");
-      step_mot1(yval.toInt(),zval.toInt());    
+      //step_mot1(yval.toInt(),zval.toInt());    
+        step_mot_n(yval.toInt(),zval.toInt(), dirPin, stepPin, en, 1000);
     }
         if (xval=="C"){
       
