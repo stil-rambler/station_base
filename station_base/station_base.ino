@@ -1,3 +1,6 @@
+#include "button.h"
+
+
 const int dirPin = 5;
 const int stepPin = 2;
 const int dirPin2 = 6;
@@ -5,6 +8,15 @@ const int stepPin2 = 3;
 int pos_kar = 0;
 
 const int en = 8;
+const int button_pod = 9;   //концевик подьемника
+const int button_kar = 10;  //концевик карусельки
+const int button_tolat1 = 11;  //концевик выгрузки
+
+button btn1(button_pod); // указываем пин
+button btn2(button_kar); //Указывает на нулевую позицию
+button btn3(button_tolat1); // Указывает что толкатель открыт
+
+
 
 void setup()
 {
@@ -21,11 +33,15 @@ void step_mot1(int step1, int dir ){
     digitalWrite(en, LOW);
     digitalWrite(dirPin, dir); // Установка вращения по часовой стрелки
     for(int x = 0; x < step1; x++)
-    {
-        digitalWrite(stepPin, HIGH);
-        delayMicroseconds(1000);
-        digitalWrite(stepPin, LOW);
-        delayMicroseconds(1000);
+        {
+        if (btn1.click()){ // Не будет работать посто добывал для удобвства
+            digitalWrite(en, HIGH);       
+            }else{
+            digitalWrite(stepPin, HIGH);
+            delayMicroseconds(1000);
+            digitalWrite(stepPin, LOW);
+            delayMicroseconds(1000);
+        }
     } 
     digitalWrite(en, HIGH);
 }
