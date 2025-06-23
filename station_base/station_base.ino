@@ -1,133 +1,168 @@
 #include "button.h"
 
+// Константы для пинов
+constexpr uint8_t dirPin = 5;
+constexpr uint8_t stepPin = 2;
+constexpr uint8_t dirPin2 = 6;
+constexpr uint8_t stepPin2 = 3;
+constexpr uint8_t enPin = 8;
+constexpr uint8_t button_pod = 9;    // концевик подъемника
+constexpr uint8_t button_kar = 10;   // концевик карусели
+constexpr uint8_t button_tolat1 = 11; // концевик выгрузки
 
-const int dirPin = 5;
-const int stepPin = 2;
-const int dirPin2 = 6;
-const int stepPin2 = 3;
-int pos_kar = 0;
+// Объекты кнопок (концевиков)
+button liftEndStop(button_pod);    // Подъемник
+button carouselEndStop(button_kar); // Карусель
+button pusherEndStop(button_tolat1); // Толкатель
 
-const int en = 8;
-const int button_pod = 9;   //концевик подьемника
-const int button_kar = 10;  //концевик карусельки
-const int button_tolat1 = 11;  //концевик выгрузки
+// Состояние системы
+struct SystemState {
+  int carouselPosition = 0;
+  bool liftAtTop = false;
+  bool liftAtBottom = false;
+  bool carouselAtHome = false;
+  bool pusherRetracted = false;
+} systemState;
 
-button btn1(button_pod); // указываем пин
-button btn2(button_kar); //Указывает на нулевую позицию
-button btn3(button_tolat1); // Указывает что толкатель открыт
-
-
-
-void setup()
-{
-pinMode(stepPin, OUTPUT);
-pinMode(dirPin, OUTPUT);
-pinMode(stepPin2, OUTPUT);
-pinMode(dirPin2, OUTPUT);
-pinMode(en, OUTPUT);
-Serial.begin(9600);
+void setup() {
+  pinMode(stepPin, OUTPUT);
+  pinMode(dirPin, OUTPUT);
+  pinMode(stepPin2, OUTPUT);
+  pinMode(dirPin2, OUTPUT);
+  pinMode(enPin, OUTPUT);
+  digitalWrite(enPin, HIGH); // Изначально моторы выключены
+  
+  Serial.begin(9600);
+  Serial.println("System ready");
 }
 
+// Универсальная функция управления шаговым двигателем
+bool stepMotor(int steps, uint8_t direction, uint8_t motorPin, uint8_t dirPin, 
+              uint8_t enablePin, unsigned int stepDelay, bool checkEndStop = false) {
+  if (steps == 0) return true;
 
-void step_mot1(int step1, int dir ){
-    digitalWrite(en, LOW);
-    digitalWrite(dirPin, dir); // Установка вращения по часовой стрелки
-    for(int x = 0; x < step1; x++)
-        {
-        if (btn1.click()){ // Не будет работать посто добывал для удобвства
-            digitalWrite(en, HIGH);       
-            }else{
-            digitalWrite(stepPin, HIGH);
-            delayMicroseconds(1000);
-            digitalWrite(stepPin, LOW);
-            delayMicroseconds(1000);
-        }
-    } 
-    digitalWrite(en, HIGH);
-}
-
-void step_mot2(int step1, int dir ){
-  digitalWrite(en, LOW);
-    //1032 поный оборот 8 лепистков
-  digitalWrite(dirPin2, dir); // Установка вращения по часовой стрелки
-  for(int x = 0; x < step1; x++)
-    {
-      digitalWrite(stepPin2, HIGH);
-      delayMicroseconds(5000);
-      digitalWrite(stepPin2, LOW);
-      delayMicroseconds(5000);
+  digitalWrite(enablePin, LOW);
+  digitalWrite(dirPin, direction);
+  
+  bool completed = true;
+  for (int i = 0; i < abs(steps); i++) {
+    // Проверка концевика, если требуется
+    if (checkEndStop && (liftEndStop.click() || carouselEndStop.click() || pusherEndStop.click())) {
+      completed = false;
+      break;
     }
-  digitalWrite(en, HIGH);
+    
+    digitalWrite(motorPin, HIGH);
+    delayMicroseconds(stepDelay);
+    digitalWrite(motorPin, LOW);
+    delayMicroseconds(stepDelay);
+  }
+  
+  digitalWrite(enablePin, HIGH);
+  return completed;
 }
 
-void step_mot_n(int step1, int dir , int pdir , int pstep , int enn , int tm){ // step1 - назначены шаги, dir - направление , pdir - пин направление , pstep - пин шагов ,  enn - пин включение,  tm - время переключение
-  Serial.print(step1);  
-  digitalWrite(enn, LOW);
-  digitalWrite(pdir, dir); // Установка вращения по часовой стрелки
-  for(long x = 0; x < step1; x++)
-  {
-    if (btn1.click()){
-        digitalWrite(pstep, HIGH);
-        delayMicroseconds(tm);
-        digitalWrite(pstep, LOW);
-        delayMicroseconds(tm);
+// Обновление состояния системы
+void updateSystemState() {
+  systemState.liftAtTop = (digitalRead(button_pod) == LOW);
+  systemState.carouselAtHome = (digitalRead(button_kar) == LOW);
+  systemState.pusherRetracted = (digitalRead(button_tolat1) == LOW);
+}
+
+// Обработка команд
+void processCommand(const String& command) {
+  updateSystemState();
+  
+  if (command.startsWith("K ")) { // Управление каруселью
+    int steps = command.substring(2).toInt();
+    uint8_t direction = steps > 0 ? HIGH : LOW;
+    steps = abs(steps);
+    
+    Serial.print("Moving carousel ");
+    Serial.print(steps);
+    Serial.println(" steps");
+    
+    bool success = stepMotor(steps, direction, stepPin2, dirPin2, enPin, 5000, true);
+    
+    if (success) {
+      systemState.carouselPosition += (direction == HIGH ? steps : -steps);
+      Serial.println("Movement completed");
+    } else {
+      Serial.println("Movement interrupted by endstop");
     }
   }
-  digitalWrite(enn, HIGH);
+  else if (command.startsWith("P ")) { // Управление подъемником
+    int steps = command.substring(2).toInt();
+    uint8_t direction = steps > 0 ? HIGH : LOW;
+    steps = abs(steps);
+    
+    Serial.print("Moving lift ");
+    Serial.print(steps);
+    Serial.println(" steps");
+    
+    bool success = stepMotor(steps, direction, stepPin, dirPin, enPin, 1000, true);
+    
+    if (success) {
+      Serial.println("Movement completed");
+    } else {
+      Serial.println("Movement interrupted by endstop");
+      systemState.liftAtTop = (direction == HIGH);
+      systemState.liftAtBottom = (direction == LOW);
+    }
+  }
+  else if (command == "C") { // Автоматический цикл
+    Serial.println("Starting automatic cycle");
+    
+    // Подъем
+    if (!systemState.liftAtTop) {
+      Serial.println("Lifting up");
+      stepMotor(20000, HIGH, stepPin, dirPin, enPin, 1000, true);
+      delay(1000);
+    }
+    
+    // Опускание
+    if (!systemState.liftAtBottom) {
+      Serial.println("Lowering down");
+      stepMotor(20000, LOW, stepPin, dirPin, enPin, 1000, true);
+      delay(1000);
+    }
+    
+    // Вращение карусели
+    Serial.println("Rotating carousel");
+    stepMotor(516, HIGH, stepPin2, dirPin2, enPin, 5000, true);
+    
+    Serial.println("Cycle completed");
+  }
+  else if (command == "STATUS") {
+    Serial.println("System status:");
+    Serial.print("Carousel position: ");
+    Serial.println(systemState.carouselPosition);
+    Serial.print("Lift at top: ");
+    Serial.println(systemState.liftAtTop ? "YES" : "NO");
+    Serial.print("Lift at bottom: ");
+    Serial.println(systemState.liftAtBottom ? "YES" : "NO");
+    Serial.print("Carousel at home: ");
+    Serial.println(systemState.carouselAtHome ? "YES" : "NO");
+    Serial.print("Pusher retracted: ");
+    Serial.println(systemState.pusherRetracted ? "YES" : "NO");
+  }
+  else {
+    Serial.print("Unknown command: ");
+    Serial.println(command);
+  }
 }
 
-
-String getValue(String data, char separator, int index)
-{
-    int found = 0;
-    int strIndex[] = { 0, -1 };
-    int maxIndex = data.length() - 1;
-
-    for (int i = 0; i <= maxIndex && found <= index; i++) {
-        if (data.charAt(i) == separator || i == maxIndex) {
-            found++;
-            strIndex[0] = strIndex[1] + 1;
-            strIndex[1] = (i == maxIndex) ? i+1 : i;
-        }
-    }
-    return found > index ? data.substring(strIndex[0], strIndex[1]) : "";
-}
-
-void loop()
-{
-
-  if(Serial.available()>0){
-    String myString = Serial.readString();
-    String xval = getValue(myString, ' ', 0);
-    String yval = getValue(myString, ' ', 1);
-    String zval = getValue(myString, ' ', 2);
-    if (xval=="K"){
-      Serial.print(yval);
-      Serial.println(" Karuselka");
-      step_mot2(yval.toInt(),1);    
-    }
+void loop() {
+  if (Serial.available() > 0) {
+    String command = Serial.readStringUntil('\n');
+    command.trim();
+    processCommand(command);
+  }
   
-    if (xval=="P"){
-      Serial.print(yval);
-      Serial.println(" Podiemnik");
-      //step_mot1(yval.toInt(),zval.toInt());    
-        step_mot_n(yval.toInt(),zval.toInt(), dirPin, stepPin, en, 1000);
-    }
-        if (xval=="C"){
-      
-      Serial.println(" Start pogr");
-      step_mot1(20000,1);    
-      delay(10000);      
-      step_mot1(20000,0);    
-      delay(1000);      
-      step_mot2(516,1);    
-      delay(1000);      
-      step_mot1(20000,1);    
-      delay(10000);      
-      step_mot1(20000,0);    
-
-    }
-
- }
-
+  // Регулярное обновление состояния
+  static unsigned long lastUpdate = 0;
+  if (millis() - lastUpdate > 100) {
+    updateSystemState();
+    lastUpdate = millis();
+  }
 }
